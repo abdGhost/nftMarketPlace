@@ -29,6 +29,7 @@ contract NFTMarketplace is ERC721URIStorage, ERC2981, ReentrancyGuard {
         string name;
         string symbol;
         address owner;
+        string metadataURI; // New field for collection metadata URI
     }
 
     mapping(uint256 => MarketItem) public idToMarketItem;
@@ -47,7 +48,8 @@ contract NFTMarketplace is ERC721URIStorage, ERC2981, ReentrancyGuard {
         uint256 indexed collectionId,
         string name,
         string symbol,
-        address owner
+        address owner,
+        string metadataURI
     );
 
     event AuctionCreated(
@@ -66,8 +68,8 @@ contract NFTMarketplace is ERC721URIStorage, ERC2981, ReentrancyGuard {
         return super.supportsInterface(interfaceId);
     }
 
-    /// @notice Create a new NFT collection
-    function createCollection(string memory name, string memory symbol) public {
+    /// @notice Create a new NFT collection with metadata URI
+    function createCollection(string memory name, string memory symbol, string memory metadataURI) public {
         _collectionIds++;
         uint256 newCollectionId = _collectionIds;
 
@@ -75,10 +77,22 @@ contract NFTMarketplace is ERC721URIStorage, ERC2981, ReentrancyGuard {
             newCollectionId,
             name,
             symbol,
-            msg.sender
+            msg.sender,
+            metadataURI
         );
 
-        emit CollectionCreated(newCollectionId, name, symbol, msg.sender);
+        emit CollectionCreated(newCollectionId, name, symbol, msg.sender, metadataURI);
+    }
+
+    /// @notice Update Collection Metadata
+    function setCollectionMetadata(uint256 collectionId, string memory metadataURI) public {
+        require(idToCollection[collectionId].owner == msg.sender, "You must own the collection");
+        idToCollection[collectionId].metadataURI = metadataURI;
+    }
+
+    /// @notice Get Collection Metadata
+    function getCollectionMetadata(uint256 collectionId) public view returns (string memory) {
+        return idToCollection[collectionId].metadataURI;
     }
 
     /// @notice Mint a new NFT in a collection
