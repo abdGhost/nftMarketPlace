@@ -1,165 +1,155 @@
+const { expect } = require("chai");
 const { ethers } = require("hardhat");
-const assert = require("assert");
 
 describe("NFTMarketplace", function () {
-  let NFTMarketplace, nftMarketplace, deployer, user1, user2;
+  let NFTMarketplace, nftMarketplace, owner, user1, user2;
   let listingFee, tokenURI;
 
   beforeEach(async function () {
-    console.log("\n🔄 Setting up the test environment...");
-
-    [deployer, user1, user2] = await ethers.getSigners();
-
-    // Display signers for clarity
-    console.log("👤 Deployer:", deployer.address);
-    console.log("👤 User1:", user1.address);
-    console.log("👤 User2:", user2.address);
-
-    // Use ethers@6 syntax
-    listingFee = ethers.parseEther("0.025");
-    tokenURI = "ipfs://token-metadata-uri";
+    [owner, user1, user2] = await ethers.getSigners();
 
     NFTMarketplace = await ethers.getContractFactory("NFTMarketplace");
     nftMarketplace = await NFTMarketplace.deploy();
     await nftMarketplace.waitForDeployment();
 
-    console.log("✅ Contract deployed at:", await nftMarketplace.getAddress());
+    listingFee = ethers.parseEther("0.025");
+    tokenURI = "ipfs://sample-token-uri";
   });
 
   /// ✅ Test Case 1: Contract Deployment
   it("Should deploy the contract and set the marketplace owner", async function () {
-    console.log("\n🛠️ Testing Contract Deployment...");
-
-    const owner = await nftMarketplace.marketplaceOwner();
-    console.log("👑 Marketplace Owner:", owner);
-    console.log("✅ Expected Owner:", deployer.address);
-
-    assert.strictEqual(owner, deployer.address, "Owner is not the deployer");
+    const marketplaceOwner = await nftMarketplace.marketplaceOwner();
+    expect(marketplaceOwner).to.equal(owner.address);
   });
 
-  /// ✅ Test Case 2: Mint an NFT
-  it("Should mint a new NFT", async function () {
-    console.log("\n🖼️ Testing Minting NFT...");
-
-    const tx = await nftMarketplace
+  /// ✅ Test Case 2: Create a Collection
+  it("Should allow a user to create a collection", async function () {
+    await nftMarketplace
       .connect(user1)
-      .mintNFT(tokenURI, ethers.parseEther("1"), { value: listingFee });
-    await tx.wait();
+      .createCollection("Test Collection", "TEST");
+    const collection = await nftMarketplace.idToCollection(1);
 
-    console.log("✅ NFT Minted by:", user1.address);
-    console.log("🔗 Token URI:", tokenURI);
-
-    const marketItem = await nftMarketplace.idToMarketItem(1);
-    console.log("📊 Market Item Details:");
-    console.log("Token ID:", marketItem.tokenId.toString());
-    console.log("Seller:", marketItem.seller);
-    console.log("Owner:", marketItem.owner);
-    console.log("Price:", marketItem.price.toString());
-
-    assert.strictEqual(marketItem.tokenId.toString(), "1", "Token ID mismatch");
-    assert.strictEqual(marketItem.seller, user1.address, "Seller mismatch");
-    assert.strictEqual(
-      marketItem.price.toString(),
-      ethers.parseEther("1").toString(),
-      "Price mismatch"
-    );
+    expect(collection.name).to.equal("Test Collection");
+    expect(collection.symbol).to.equal("TEST");
+    expect(collection.owner).to.equal(user1.address);
   });
 
-  /// ✅ Test Case 3: List an NFT for Sale
-  it("Should list an NFT for sale", async function () {
-    console.log("\n📤 Testing Listing NFT for Sale...");
+  /// ✅ Test Case 3: Mint an NFT in a Collection
+  it("Should mint an NFT in a collection", async function () {
+    await nftMarketplace
+      .connect(user1)
+      .createCollection("Test Collection", "TEST");
 
     await nftMarketplace
       .connect(user1)
-      .mintNFT(tokenURI, ethers.parseEther("1"), { value: listingFee });
+      .mintNFT(1, tokenURI, ethers.parseEther("1"), { value: listingFee });
+
+    const marketItem = await nftMarketplace.idToMarketItem(1);
+
+    expect(marketItem.tokenId).to.equal(1);
+    expect(marketItem.price).to.equal(ethers.parseEther("1"));
+    expect(marketItem.seller).to.equal(user1.address);
+  });
+
+  /// ✅ Test Case 4: Batch Mint NFTs
+  it("Should batch mint NFTs in a collection", async function () {
+    await nftMarketplace
+      .connect(user1)
+      .createCollection("Batch Collection", "BATCH");
+
+    const tokenURIs = ["ipfs://uri1", "ipfs://uri2"];
+    const prices = [ethers.parseEther("1"), ethers.parseEther("2")];
+
+    const totalFee = listingFee * BigInt(tokenURIs.length);
 
     const tx = await nftMarketplace
+      .connect(user1)
+      .batchMintNFT(1, tokenURIs, prices, { value: totalFee });
+
+    await tx.wait();
+
+    const marketItem1 = await nftMarketplace.idToMarketItem(1);
+    const marketItem2 = await nftMarketplace.idToMarketItem(2);
+
+    expect(marketItem1.price).to.equal(ethers.parseEther("1"));
+    expect(marketItem2.price).to.equal(ethers.parseEther("2"));
+    expect(marketItem1.seller).to.equal(user1.address);
+    expect(marketItem2.seller).to.equal(user1.address);
+  });
+
+  /// ✅ Test Case 5: List an NFT for Sale
+  it("Should allow a user to list their NFT for sale", async function () {
+    await nftMarketplace
+      .connect(user1)
+      .createCollection("List Collection", "LIST");
+    await nftMarketplace
+      .connect(user1)
+      .mintNFT(1, tokenURI, ethers.parseEther("1"), { value: listingFee });
+
+    await nftMarketplace
       .connect(user1)
       .listNFT(1, ethers.parseEther("2"), { value: listingFee });
-    await tx.wait();
-
-    console.log("✅ NFT Listed for Sale by:", user1.address);
-    console.log("💲 Listing Price:", ethers.formatEther("2"));
 
     const marketItem = await nftMarketplace.idToMarketItem(1);
-    console.log("📊 Market Item After Listing:");
-    console.log("Listed:", marketItem.listed);
-    console.log("Price:", marketItem.price.toString());
-
-    assert.strictEqual(marketItem.listed, true, "NFT is not listed");
-    assert.strictEqual(
-      marketItem.price.toString(),
-      ethers.parseEther("2").toString(),
-      "Listing price mismatch"
-    );
+    expect(marketItem.listed).to.be.true;
+    expect(marketItem.price).to.equal(ethers.parseEther("2"));
   });
 
-  /// ✅ Test Case 4: Prevent Non-Owner from Listing an NFT
-  it("Should not allow a non-owner to list an NFT", async function () {
-    console.log("\n🚫 Testing Non-Owner Listing Restriction...");
-
+  /// ✅ Test Case 6: Prevent Non-Owner from Listing
+  it("Should prevent a non-owner from listing an NFT", async function () {
+    await nftMarketplace.connect(user1).createCollection("Invalid List", "INV");
     await nftMarketplace
       .connect(user1)
-      .mintNFT(tokenURI, ethers.parseEther("1"), { value: listingFee });
+      .mintNFT(1, tokenURI, ethers.parseEther("1"), { value: listingFee });
 
-    try {
-      await nftMarketplace
+    await expect(
+      nftMarketplace
         .connect(user2)
-        .listNFT(1, ethers.parseEther("2"), { value: listingFee });
-      assert.fail("Non-owner was able to list an NFT");
-    } catch (error) {
-      console.log("✅ Error Message:", error.message);
-      assert(
-        error.message.includes("You must own the NFT"),
-        "Incorrect error message"
-      );
-    }
+        .listNFT(1, ethers.parseEther("2"), { value: listingFee })
+    ).to.be.revertedWith("You must own the NFT");
   });
 
-  /// ✅ Test Case 5: Buy an NFT
-  it("Should allow a user to buy an NFT", async function () {
-    console.log("\n💸 Testing Buying an NFT...");
-
+  /// ✅ Test Case 7: Buy an NFT
+  it("Should allow a user to buy a listed NFT", async function () {
     await nftMarketplace
       .connect(user1)
-      .mintNFT(tokenURI, ethers.parseEther("1"), { value: listingFee });
-
+      .createCollection("Buy Collection", "BUY");
+    await nftMarketplace
+      .connect(user1)
+      .mintNFT(1, tokenURI, ethers.parseEther("1"), { value: listingFee });
     await nftMarketplace
       .connect(user1)
       .listNFT(1, ethers.parseEther("1"), { value: listingFee });
 
     const sellerBalanceBefore = await ethers.provider.getBalance(user1.address);
+
     await nftMarketplace
       .connect(user2)
       .buyNFT(1, { value: ethers.parseEther("1") });
-    const sellerBalanceAfter = await ethers.provider.getBalance(user1.address);
-
-    console.log("✅ NFT Purchased by:", user2.address);
-    console.log(
-      "💰 Seller Balance Before:",
-      ethers.formatEther(sellerBalanceBefore)
-    );
-    console.log(
-      "💰 Seller Balance After:",
-      ethers.formatEther(sellerBalanceAfter)
-    );
 
     const marketItem = await nftMarketplace.idToMarketItem(1);
-    console.log("📊 Market Item After Purchase:");
-    console.log("Owner:", marketItem.owner);
-    console.log("Sold:", marketItem.sold);
+    expect(marketItem.sold).to.be.true;
+    expect(marketItem.owner).to.equal(user2.address);
 
-    // Comparison with BigInt syntax
-    assert(
-      sellerBalanceAfter > sellerBalanceBefore,
-      "Seller balance did not increase"
-    );
+    const sellerBalanceAfter = await ethers.provider.getBalance(user1.address);
+    expect(sellerBalanceAfter > sellerBalanceBefore).to.be.true;
+  });
 
-    assert.strictEqual(
-      marketItem.owner,
-      user2.address,
-      "Ownership transfer failed"
-    );
-    assert.strictEqual(marketItem.sold, true, "NFT was not marked as sold");
+  /// ✅ Test Case 8: Create an Auction
+  it("Should allow a user to create an auction", async function () {
+    await nftMarketplace
+      .connect(user1)
+      .createCollection("Auction Collection", "AUC");
+    await nftMarketplace
+      .connect(user1)
+      .mintNFT(1, tokenURI, ethers.parseEther("1"), { value: listingFee });
+
+    await nftMarketplace
+      .connect(user1)
+      .createAuction(1, ethers.parseEther("1"), 86400); // 1 day
+
+    const marketItem = await nftMarketplace.idToMarketItem(1);
+    expect(marketItem.listed).to.be.true;
+    expect(marketItem.price).to.equal(ethers.parseEther("1"));
   });
 });
